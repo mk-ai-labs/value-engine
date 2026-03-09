@@ -1,0 +1,146 @@
+"""V3 Value Engine - VIX Regime Classifier.
+
+Classifies market conditions into three regimes based on VIX levels:
+- GREEN (VIX < 18):  Risk-on, allow new value buys
+- YELLOW (18 <= VIX < 25):  Caution, trim winners, no new buys
+- RED (VIX >= 25):  Risk-off, cut losers aggressively
+
+The classifier can operate on historical VIX data (for backtesting)
+or fetch the current VIX level in real-time via yfinance.
+"""
+
+from typing import Any, Dict, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+import yfinance as yf
+
+from engine import config
+
+
+class RegimeClassifier:
+    """Static VIX-based regime classifier.
+
+    All methods are classmethods / staticmethods so no instantiation
+    is required -- call ``RegimeClassifier.classify(vix_value)`` directly.
+    """
+
+    # Regime names
+    GREEN = "GREEN"
+    YELLOW = "YELLOW"
+    RED = "RED"
+
+    # Matplotlib colours for charting
+    _COLORS = {
+        "GREEN": "#2ecc71",
+        "YELLOW": "#f1c40f",
+        "RED": "#e74c3c",
+    }
+
+    # ---------------------------------------------------------------
+    # Core classification
+    # ---------------------------------------------------------------
+
+    @staticmethod
+    def classify(vix_value: float) -> str:
+        """Classify a single VIX value into a regime.
+
+        Args:
+            vix_value: VIX closing value.
+
+        Returns:
+            One of 'GREEN', 'YELLOW', or 'RED'.
+        """
+        if vix_value < config.VIX_GREEN:
+            return RegimeClassifier.GREEN
+        elif vix_value < config.VIX_YELLOW:
+            return RegimeClassifier.YELLOW
+        else:
+            return RegimeClassifier.RED
+
+    @staticmethod
+    def classify_series(vix_series: pd.Series) -> pd.Series:
+        """Classify an entire VIX series into regimes.
+
+        Args:
+            vix_series: Series of VIX values.
+
+        Returns:
+            Series of regime strings aligned to the input index.
+        """
+        return vix_series.apply(RegimeClassifier.classify)
+
+    # ---------------------------------------------------------------
+    # Live VIX
+    # ---------------------------------------------------------------
+
+    @classmethod
+    def get_current_regime(cls) -> Dict[str, Any]:
+        """Fetch the current VIX and return regime information.
+
+        Returns:
+            Dict with keys: 'vix', 'regime', 'color', 'description'.
+            Falls back to YELLOW if yfinance data is unavailable.
+        """
+        try:
+            vix_ticker = yf.Ticker("^VIX")
+            hist = vix_ticker.history(period="5d")
+            if hist.empty:
+                return cls._fallback("No VIX data returned")
+            vix_val = float(hist["Close"].iloc[-1])
+        except Exception as exc:
+            return cls._fallback(str(exc))
+
+        regime = cls.classify(vix_val)
+        return {
+            "vix": round(vix_val, 2),
+            "regime": regime,
+            "color": cls._COLORS.get(regime, "#95a5a6"),
+            "description": cls._describe(regime, vix_val),
+            "thresholds": {
+                "green_below": config.VIX_GREEN,
+                "yellow_below": config.VIX_YELLOW,
+            },
+        }
+
+    # ---------------------------------------------------------------
+    # Helpers
+    # ---------------------------------------------------------------
+
+    @staticmethod
+    def get_regime_color(regime: str) -> str:
+        """Return the hex colour for a regime string."""
+        return RegimeClassifier._COLORS.get(regime, "#95a5a6")
+
+    @classmethod
+    def _fallback(cls, reason: str) -> Dict[str, Any]:
+        """Return a cautious YELLOW regime when data is unavailable."""
+        return {
+            "vix": None,
+            "regime": cls.YELLOW,
+            "color": cls._COLORS[cls.YELLOW],
+            "description": f"Regime unknown ({reason}). Defaulting to YELLOW (caution).",
+            "thresholds": {
+                "green_below": config.VIX_GREEN,
+                "yellow_below": config.VIX_YELLOW,
+            },
+        }
+
+    @staticmethod
+    def _describe(regime: str, vix: float) -> str:
+        """Human-readable regime description."""
+        if regime == "GREEN":
+            return (
+                f"VIX at {vix:.1f} -- Risk-on. Safe to deploy capital "
+                f"into new value picks."
+            )
+        elif regime == "YELLOW":
+            return (
+                f"VIX at {vix:.1f} -- Caution zone. Trim winners, "
+                f"hold cash, no new value buys."
+            )
+        else:
+            return (
+                f"VIX at {vix:.1f} -- Risk-off. Cut losers, raise cash, "
+                f"protect capital."
+            )
