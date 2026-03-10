@@ -4,9 +4,6 @@ Classifies market conditions into three regimes based on VIX levels:
 - GREEN (VIX < 18):  Risk-on, allow new value buys
 - YELLOW (18 <= VIX < 25):  Caution, trim winners, no new buys
 - RED (VIX >= 25):  Risk-off, cut losers aggressively
-
-The classifier can operate on historical VIX data (for backtesting)
-or fetch the current VIX level in real-time via yfinance.
 """
 
 from typing import Any, Dict, Optional, Tuple
@@ -19,38 +16,21 @@ from engine import config
 
 
 class RegimeClassifier:
-    """Static VIX-based regime classifier.
+    """Static VIX-based regime classifier."""
 
-    All methods are classmethods / staticmethods so no instantiation
-    is required -- call ``RegimeClassifier.classify(vix_value)`` directly.
-    """
-
-    # Regime names
     GREEN = "GREEN"
     YELLOW = "YELLOW"
     RED = "RED"
 
-    # Matplotlib colours for charting
     _COLORS = {
         "GREEN": "#2ecc71",
         "YELLOW": "#f1c40f",
         "RED": "#e74c3c",
     }
 
-    # ---------------------------------------------------------------
-    # Core classification
-    # ---------------------------------------------------------------
-
     @staticmethod
     def classify(vix_value: float) -> str:
-        """Classify a single VIX value into a regime.
-
-        Args:
-            vix_value: VIX closing value.
-
-        Returns:
-            One of 'GREEN', 'YELLOW', or 'RED'.
-        """
+        """Classify a single VIX value into a regime."""
         if vix_value < config.VIX_GREEN:
             return RegimeClassifier.GREEN
         elif vix_value < config.VIX_YELLOW:
@@ -60,28 +40,12 @@ class RegimeClassifier:
 
     @staticmethod
     def classify_series(vix_series: pd.Series) -> pd.Series:
-        """Classify an entire VIX series into regimes.
-
-        Args:
-            vix_series: Series of VIX values.
-
-        Returns:
-            Series of regime strings aligned to the input index.
-        """
+        """Classify an entire VIX series into regimes."""
         return vix_series.apply(RegimeClassifier.classify)
-
-    # ---------------------------------------------------------------
-    # Live VIX
-    # ---------------------------------------------------------------
 
     @classmethod
     def get_current_regime(cls) -> Dict[str, Any]:
-        """Fetch the current VIX and return regime information.
-
-        Returns:
-            Dict with keys: 'vix', 'regime', 'color', 'description'.
-            Falls back to YELLOW if yfinance data is unavailable.
-        """
+        """Fetch the current VIX and return regime information."""
         try:
             vix_ticker = yf.Ticker("^VIX")
             hist = vix_ticker.history(period="5d")
@@ -102,10 +66,6 @@ class RegimeClassifier:
                 "yellow_below": config.VIX_YELLOW,
             },
         }
-
-    # ---------------------------------------------------------------
-    # Helpers
-    # ---------------------------------------------------------------
 
     @staticmethod
     def get_regime_color(regime: str) -> str:
